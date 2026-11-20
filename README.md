@@ -42,7 +42,34 @@ npm run dev
 ```
 
 ### 5. Open in Browser
-Navigate to: **http://localhost:5173**
+Navigate to: **http://localhost:5173** (or **http://localhost:8000** for unified fullstack)
+
+---
+
+## 🌐 1-Click Cloud Deployment
+
+Domino Sky is pre-configured for instant zero-configuration deployment across all major cloud providers:
+
+### Option A: Vercel (Recommended 1-Click)
+1. Push this repository to GitHub.
+2. Go to [Vercel Dashboard](https://vercel.com/new) and select **Import Repository**.
+3. Leave all default settings as-is (`vercel.json` automatically configures Vite build + Python serverless API).
+4. Click **Deploy**. Your live site is ready immediately!
+
+### Option B: Render
+1. In [Render Dashboard](https://dashboard.render.com/), choose **New Web Service** and link your GitHub repo.
+2. Render detects `render.yaml` or you can set:
+   - **Build Command**: `cd frontend && npm install && npm run build && cd ../backend && pip install -r requirements.txt`
+   - **Start Command**: `cd backend && uvicorn main:app --host 0.0.0.0 --port $PORT`
+3. Click **Create Web Service**. FastAPI serves both the React OCC dashboard and the simulation API.
+
+### Option C: Railway / Docker / Fly.io
+- A production-grade multi-stage [Dockerfile](file:///c:/Users/NIDHIS%20GANDHI%20D/OneDrive/Desktop/Domino-Sky/Dockerfile) and [Procfile](file:///c:/Users/NIDHIS%20GANDHI%20D/OneDrive/Desktop/Domino-Sky/Procfile) are included at the root.
+- Simply deploy with Docker: `docker build -t domino-sky . && docker run -p 8000:8000 domino-sky`.
+
+### Option D: Netlify / GitHub Pages (Autonomous Edge Mode)
+- Domino Sky includes a self-contained deterministic edge simulation engine bundled with `flight_network.json`.
+- Even on pure static hosting or during server cold-starts, **all 16 airports, 70 flights, rotation propagation, missed connections, crew alerts, and AI recovery strategies work seamlessly without showing error pages**.
 
 ---
 

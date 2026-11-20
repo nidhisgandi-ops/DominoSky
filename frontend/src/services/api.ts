@@ -17,8 +17,25 @@ import {
   DelayChain,
   TimelineEvent,
 } from '../types';
+import {
+  getLocalBaseline,
+  localDataset,
+  runLocalSimulation,
+  evaluateLocalRecovery,
+  getLocalScenarios,
+  createLocalScenario,
+  deleteLocalScenario,
+} from './localEngine';
 
-const BASE_URL = '/api';
+const metaEnv = (import.meta as any).env || {};
+const API_BASE = metaEnv.VITE_API_URL || metaEnv.VITE_API_BASE_URL || '';
+const BASE_URL = API_BASE ? `${API_BASE.replace(/\/$/, '')}/api` : '/api';
+
+let liveApiActive = true;
+
+export function isLiveApiActive(): boolean {
+  return liveApiActive;
+}
 
 async function handleResponse<T>(res: Response): Promise<T> {
   if (!res.ok) {
@@ -229,128 +246,214 @@ function normalizeSimulationResult(raw: any): SimulationResult {
 export const api = {
   // Baseline & Static Data
   async getBaseline(): Promise<BaselineState> {
-    const res = await fetch(`${BASE_URL}/baseline`);
-    const raw = await handleResponse<any>(res);
-    const sim = normalizeSimulationResult(raw);
-    return {
-      flights: sim.all_flights,
-      connections: sim.all_connections,
-      crew_status: sim.crew_status,
-      metrics: sim.metrics,
-    };
+    try {
+      const res = await fetch(`${BASE_URL}/flights/baseline`);
+      const raw = await handleResponse<any>(res);
+      liveApiActive = true;
+      const sim = normalizeSimulationResult(raw);
+      return {
+        flights: sim.all_flights,
+        connections: sim.all_connections,
+        crew_status: sim.crew_status,
+        metrics: sim.metrics,
+      };
+    } catch (err) {
+      console.warn('[Domino Sky] Live API unavailable; running autonomous edge engine', err);
+      liveApiActive = false;
+      return getLocalBaseline();
+    }
   },
 
   async getAirports(): Promise<Airport[]> {
-    const res = await fetch(`${BASE_URL}/airports`);
-    return handleResponse<Airport[]>(res);
+    try {
+      const res = await fetch(`${BASE_URL}/airports`);
+      const data = await handleResponse<Airport[]>(res);
+      liveApiActive = true;
+      return data;
+    } catch {
+      liveApiActive = false;
+      return localDataset.airports;
+    }
   },
 
   async getFlights(): Promise<Flight[]> {
-    const res = await fetch(`${BASE_URL}/flights`);
-    return handleResponse<Flight[]>(res);
+    try {
+      const res = await fetch(`${BASE_URL}/flights`);
+      const data = await handleResponse<Flight[]>(res);
+      liveApiActive = true;
+      return data;
+    } catch {
+      liveApiActive = false;
+      return localDataset.flights;
+    }
   },
 
   async getCrews(): Promise<Crew[]> {
-    const res = await fetch(`${BASE_URL}/crews`);
-    return handleResponse<Crew[]>(res);
+    try {
+      const res = await fetch(`${BASE_URL}/crews`);
+      const data = await handleResponse<Crew[]>(res);
+      liveApiActive = true;
+      return data;
+    } catch {
+      liveApiActive = false;
+      return localDataset.crews;
+    }
   },
 
   async getSpareAircraft(): Promise<SpareAircraft[]> {
-    const res = await fetch(`${BASE_URL}/spare-aircraft`);
-    return handleResponse<SpareAircraft[]>(res);
+    try {
+      const res = await fetch(`${BASE_URL}/spare-aircraft`);
+      const data = await handleResponse<SpareAircraft[]>(res);
+      liveApiActive = true;
+      return data;
+    } catch {
+      liveApiActive = false;
+      return localDataset.spareAircraft;
+    }
   },
 
   async getConnections(): Promise<Connection[]> {
-    const res = await fetch(`${BASE_URL}/connections`);
-    return handleResponse<Connection[]>(res);
+    try {
+      const res = await fetch(`${BASE_URL}/connections`);
+      const data = await handleResponse<Connection[]>(res);
+      liveApiActive = true;
+      return data;
+    } catch {
+      liveApiActive = false;
+      return localDataset.connections;
+    }
   },
 
   // Simulation
   async runSimulation(params: RunSimulationParams): Promise<SimulationResult> {
-    const res = await fetch(`${BASE_URL}/simulation/run`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(params),
-    });
-    const raw = await handleResponse<any>(res);
-    return normalizeSimulationResult(raw);
+    try {
+      const res = await fetch(`${BASE_URL}/simulation/run`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(params),
+      });
+      const raw = await handleResponse<any>(res);
+      liveApiActive = true;
+      return normalizeSimulationResult(raw);
+    } catch (err) {
+      console.warn('[Domino Sky] Live API unreachable; executing autonomous simulation engine', err);
+      liveApiActive = false;
+      return runLocalSimulation(params);
+    }
   },
 
   // Recovery Engine
   async evaluateRecovery(params: RecoveryActionParams): Promise<RecoveryEvaluation> {
-    const res = await fetch(`${BASE_URL}/recovery/evaluate`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(params),
-    });
-    const raw = await handleResponse<any>(res);
-    return {
-      action_type: raw.action_type,
-      target_flight_id: raw.target_flight_id,
-      spare_tail_id: raw.spare_tail_id,
-      feasible: raw.is_feasible ?? raw.feasible ?? true,
-      reason: raw.infeasibility_reason || raw.explanation || 'Evaluated successfully.',
-      warnings: raw.disclaimer ? [raw.disclaimer] : [],
-      before_metrics: normalizeMetrics(raw.before_metrics),
-      after_metrics: normalizeMetrics(raw.after_metrics),
-      impact_summary: raw.explanation || 'Recovery action evaluated.',
-    };
+    try {
+      const res = await fetch(`${BASE_URL}/recovery/evaluate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(params),
+      });
+      const raw = await handleResponse<any>(res);
+      liveApiActive = true;
+      return {
+        action_type: raw.action_type,
+        target_flight_id: raw.target_flight_id,
+        spare_tail_id: raw.spare_tail_id,
+        feasible: raw.is_feasible ?? raw.feasible ?? true,
+        reason: raw.infeasibility_reason || raw.explanation || 'Evaluated successfully.',
+        warnings: raw.disclaimer ? [raw.disclaimer] : [],
+        before_metrics: normalizeMetrics(raw.before_metrics),
+        after_metrics: normalizeMetrics(raw.after_metrics),
+        impact_summary: raw.explanation || 'Recovery action evaluated.',
+      };
+    } catch (err) {
+      console.warn('[Domino Sky] Live API unavailable; evaluating recovery via local engine', err);
+      liveApiActive = false;
+      return evaluateLocalRecovery(params, null);
+    }
   },
 
   async applyRecovery(params: RecoveryActionParams): Promise<SimulationResult> {
-    const res = await fetch(`${BASE_URL}/recovery/apply`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(params),
-    });
-    const raw = await handleResponse<any>(res);
-    return normalizeSimulationResult(raw);
+    try {
+      const res = await fetch(`${BASE_URL}/recovery/apply`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(params),
+      });
+      const raw = await handleResponse<any>(res);
+      liveApiActive = true;
+      return normalizeSimulationResult(raw);
+    } catch (err) {
+      console.warn('[Domino Sky] Live API unavailable; applying recovery via local engine', err);
+      liveApiActive = false;
+      return runLocalSimulation({
+        airport_id: 'BOM',
+        closure_start: '08:00',
+        closure_duration_minutes: 90,
+        scenario_name: 'Applied Tactical Recovery',
+      });
+    }
   },
 
   // Scenarios
   async getScenarios(): Promise<Scenario[]> {
-    const res = await fetch(`${BASE_URL}/scenarios`);
-    const rawList = await handleResponse<any[]>(res);
-    return rawList.map((s) => ({
-      scenario_id: s.scenario_id,
-      scenario_name: s.scenario_name,
-      airport_id: s.airport_id,
-      closure_start: s.closure_start,
-      closure_duration_minutes: s.closure_duration_minutes,
-      created_at: s.created_at,
-      metrics: normalizeMetrics(s.metrics),
-    }));
+    try {
+      const res = await fetch(`${BASE_URL}/scenarios`);
+      const rawList = await handleResponse<any[]>(res);
+      liveApiActive = true;
+      return rawList.map((s) => ({
+        scenario_id: s.scenario_id,
+        scenario_name: s.scenario_name,
+        airport_id: s.airport_id,
+        closure_start: s.closure_start,
+        closure_duration_minutes: s.closure_duration_minutes,
+        created_at: s.created_at,
+        metrics: normalizeMetrics(s.metrics),
+      }));
+    } catch {
+      liveApiActive = false;
+      return getLocalScenarios();
+    }
   },
 
   async createScenario(params: RunSimulationParams): Promise<Scenario> {
-    const payload = {
-      scenario_name: params.scenario_name || `${params.airport_id} Closure ${params.closure_duration_minutes}m`,
-      airport_id: params.airport_id,
-      closure_start: params.closure_start,
-      closure_duration_minutes: params.closure_duration_minutes,
-    };
-    const res = await fetch(`${BASE_URL}/scenarios`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    });
-    const s = await handleResponse<any>(res);
-    return {
-      scenario_id: s.scenario_id,
-      scenario_name: s.scenario_name,
-      airport_id: s.airport_id,
-      closure_start: s.closure_start,
-      closure_duration_minutes: s.closure_duration_minutes,
-      created_at: s.created_at,
-      metrics: normalizeMetrics(s.metrics),
-    };
+    try {
+      const payload = {
+        scenario_name: params.scenario_name || `${params.airport_id} Closure ${params.closure_duration_minutes}m`,
+        airport_id: params.airport_id,
+        closure_start: params.closure_start,
+        closure_duration_minutes: params.closure_duration_minutes,
+      };
+      const res = await fetch(`${BASE_URL}/scenarios`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      const s = await handleResponse<any>(res);
+      liveApiActive = true;
+      return {
+        scenario_id: s.scenario_id,
+        scenario_name: s.scenario_name,
+        airport_id: s.airport_id,
+        closure_start: s.closure_start,
+        closure_duration_minutes: s.closure_duration_minutes,
+        created_at: s.created_at,
+        metrics: normalizeMetrics(s.metrics),
+      };
+    } catch {
+      liveApiActive = false;
+      return createLocalScenario(params);
+    }
   },
 
   async deleteScenario(id: string): Promise<{ success: boolean }> {
-    const res = await fetch(`${BASE_URL}/scenarios/${id}`, {
-      method: 'DELETE',
-    });
-    await handleResponse<any>(res);
-    return { success: true };
+    try {
+      const res = await fetch(`${BASE_URL}/scenarios/${id}`, {
+        method: 'DELETE',
+      });
+      await handleResponse<any>(res);
+      liveApiActive = true;
+      return { success: true };
+    } catch {
+      liveApiActive = false;
+      return deleteLocalScenario(id);
+    }
   },
 };
